@@ -2,6 +2,7 @@ import type { LoaderFunction } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { getClient } from "~/lib/sanity/client";
 import { getDraftOrPublished } from "~/lib/sanity/getDraftOrPublished";
+import Preview from "~/lib/sanity/Preview";
 
 interface IPost {
   _id: string;
@@ -9,8 +10,11 @@ interface IPost {
   body: string;
 }
 
-type LoaderData = IPost & {
+type LoaderData = {
+  post: IPost;
   preview: boolean;
+  query: string;
+  queryParams: Record<string, unknown>;
 };
 
 export const loader: LoaderFunction = async ({
@@ -23,23 +27,30 @@ export const loader: LoaderFunction = async ({
     requestUrl?.searchParams?.get("preview") ===
     process.env.SANITY_PREVIEW_SECRET;
 
+  const query = `*[_type == "post" && slug.current == $slug]{ _id, title, body }`;
+  const queryParams = { slug: params.slug };
   // Grab the data
-  const initialData = await getClient(preview).fetch(
-    `*[_type == "post" && slug.current == $slug]{ _id, title, body }`,
-    { slug: params.slug }
-  );
-  const post = getDraftOrPublished<IPost>(initialData, preview);
+  const post = await getClient(preview).fetch(query, queryParams);
 
-  return { ...post, preview };
+  return {
+    post: getDraftOrPublished(post, preview),
+    preview,
+    // If `preview` mode is active, we'll need these for live updates
+    query: query,
+    queryParams: queryParams,
+  };
 };
 
 export default function PostPage() {
-  let { title, body } = useLoaderData<LoaderData>();
+  let { post, preview } = useLoaderData<LoaderData>();
 
   return (
-    <div style={{ textAlign: "center", padding: 20 }}>
-      <h1>{title}</h1>
-      <p>{body}</p>
-    </div>
+    <>
+      {preview && <Preview />}
+      <div style={{ textAlign: "center", padding: 20 }}>
+        <h1>{post.title}</h1>
+        <p>{post.body}</p>
+      </div>
+    </>
   );
 }
